@@ -8,7 +8,9 @@ read -p "Do you want to enable SSL (Y/N)? " enable_ssl
 if [[ $enable_ssl =~ ^[Yy]$ ]]; then
     SSL="ssl"
     read -p "Enter the path to SSL certificate: " SSL_CERTIFICATE
+    SSL_CERTIFICATE="ssl_certificate $SSL_CERTIFICATE;"
     read -p "Enter the path to SSL certificate key: " SSL_CERTIFICATE_KEY
+    SSL_CERTIFICATE_KEY="ssl_certificate_key $SSL_CERTIFICATE_KEY;"
 else
     # SSL switch ["","ssl"]
     SSL=""
@@ -17,6 +19,20 @@ else
     # config "ssl_certificate_key your/path/to/ssl_certificate_key" or leave blank
     SSL_CERTIFICATE_KEY=""
 fi
+
+# default port config
+EXPORTER_PORT="9100"
+PROMETHEUS_PORT="9090"
+NGINX_PORT="9091"
+
+read -p "Type Exporter Port [default:$EXPORTER_PORT]: " input
+EXPORTER_PORT="${input:-$EXPORTER_PORT}"
+
+read -p "Type Prometheus Port [default:$PROMETHEUS_PORT]: " input
+PROMETHEUS_PORT="${input:-$PROMETHEUS_PORT}"
+
+read -p "Type Nginx Port [default:$NGINX_PORT]: " input
+NGINX_PORT="${input:-$NGINX_PORT}"
 
 ## exporter 
 
@@ -54,11 +70,11 @@ fi
 echo "Creating Systemd Service file at $SERVICE_FILE..."
 cat <<EOF | tee "$SERVICE_FILE" > /dev/null
 [Unit]
-Description=node_exporter service on local port 9100
+Description=node_exporter service on local port $EXPORTER_PORT
 After=network.target
 
 [Service]
-ExecStart=$EXECUTABLE_DIR/$EXECUTABLE_NAME --web.listen-address=127.0.0.1:9100
+ExecStart=$EXECUTABLE_DIR/$EXECUTABLE_NAME --web.listen-address=127.0.0.1:$EXPORTER_PORT
 WorkingDirectory=$EXECUTABLE_DIR
 Restart=always
 
@@ -122,16 +138,16 @@ fi
 echo '
   - job_name: "node_exporter"
     static_configs:
-      - targets: ["localhost:9100"]' >> $EXECUTABLE_DIR/$EXECUTABLE_NAME.yml
+      - targets: ["localhost:$EXPORTER_PORT"]' >> $EXECUTABLE_DIR/$EXECUTABLE_NAME.yml
 
 echo "Creating Systemd Service file at $SERVICE_FILE..."
 cat <<EOF | tee "$SERVICE_FILE" > /dev/null
 [Unit]
-Description=prometheus service on local port 9090
+Description=prometheus service on local port $PROMETHEUS_PORT
 After=network.target
 
 [Service]
-ExecStart=$EXECUTABLE_DIR/$EXECUTABLE_NAME --web.listen-address=127.0.0.1:9090
+ExecStart=$EXECUTABLE_DIR/$EXECUTABLE_NAME --web.listen-address=127.0.0.1:$PROMETHEUS_PORT
 WorkingDirectory=$EXECUTABLE_DIR
 Restart=always
 
@@ -156,12 +172,12 @@ fi
 echo "Service $SERVICE_NAME created and Systemd configuration reloaded successfully."
 
 echo "server {
-    listen 9091 $SSL;
-    ssl_certificate $SSL_CERTIFICATE;
-    ssl_certificate_key $SSL_CERTIFICATE_KEY;
+    listen $NGINX_PORT $SSL;
+    $SSL_CERTIFICATE
+    $SSL_CERTIFICATE_KEY
     server_name _;
     location / {
-        proxy_pass http://127.0.0.1:9090/;
+        proxy_pass http://127.0.0.1:$PROMETHEUS_PORT/;
     }
 }" > /etc/nginx/conf.d/prometheus.conf
 
@@ -170,9 +186,9 @@ systemctl restart nginx
 
 echo "
 installation finished
-node_exporter.service  registered  start on local port 9100
-prometheus.service     registered  start on local port 9090
+node_exporter.service  registered  start on local port $EXPORTER_PORT
+prometheus.service     registered  start on local port $PROMETHEUS_PORT
 prometheus config file /opt/monitor/prometheus-$PROMETHEUS_VERSION
 nginx      config file /etc/nginx/conf.d/prometheus.conf
-port 9091 via nginx : 127.0.0.1:9091
+port $NGINX_PORT via nginx : 127.0.0.1:$NGINX_PORT
 "
